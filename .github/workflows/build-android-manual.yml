@@ -1,0 +1,57 @@
+name: Build BaanYai APK (manual SDK)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+      - name: Install SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Download original BaanYai HTML
+        shell: bash
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fL --retry 3 --retry-delay 2 'https://1drv.ms/u/c/57730d52e285e624/IQDzIkNbSQEcQbzzkjd9JO5VAaxzf4m52JfO19PFSqBvZOU?download=1' -o /tmp/baanyai-source.html
+          if ! grep -qi '<html' /tmp/baanyai-source.html; then
+            echo 'OneDrive did not return the original HTML. Please make the share link downloadable.' >&2
+            exit 1
+          fi
+          cp /tmp/baanyai-source.html app/src/main/assets/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/assets/index.html')
+          s = p.read_text(encoding='utf-8', errors='replace')
+          s = s.replace('+855 88 458 1422', '+855 68 423 367')
+          s = s.replace('+8558845841422', '+85568423367')
+          s = s.replace('855-88-458-1422', '855-68-423367')
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: baanyai-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
